@@ -1,0 +1,6 @@
+[core]
+    remote = myremote
+['remote "myremote"']
+    url = gdrive://1XaXCdd9eS6Ia0UcAZdtlaHmdjG-WgZv5
+    gdrive_use_service_account = true
+    gdrive_service_account_json_file_path = /home/fahadabul/mask_rcnn_skyhub/seat-analysis-68a47bbef490.json
