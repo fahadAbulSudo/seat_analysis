@@ -104,6 +104,7 @@ for image_name in os.listdir(IMAGE_DIR):
                 cv2.rectangle(image, (int(sx1 + x1), int(sy1 + y1)), (int(sx1 + x2), int(sy1 + y2)), (0, 255, 0), 2)
                 cv2.putText(image, f"Torn {score:.2f}", (int(sx1 + x1), int(sy1 + y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             for (x1, y1, x2, y2), score in zip(merged_boxes_wrinkle, merged_scores_wrinkle):
+                print(x1, y1, x2, y2)
                 cv2.rectangle(image, (int(sx1 + x1), int(sy1 + y1)), (int(sx1 + x2), int(sy1 + y2)), (0, 0, 255), 2)
                 cv2.putText(image, f"Wrinkle {score:.2f}", (int(sx1 + x1), int(sy1 + y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     cv2.imwrite(os.path.join(OUTPUT_DIR, f"output_{image_name}"), image)
