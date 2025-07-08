@@ -11,7 +11,7 @@ from detectron2.model_zoo import get_config_file
 # Paths
 MODEL_PATH_TORN = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn/dataset/output/model_final.pth"
 MODEL_PATH_WRINKLE = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_wrinkle/best_model_wrinkle.pth"
-IMAGE_DIR = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/test_image_no"
+IMAGE_DIR = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/MSN_12763_new/Seats 11-06"
 OUTPUT_DIR = "./output_predictions/segmentation_masks"
 TMP_DIR = "./tmp2"
 
@@ -31,7 +31,7 @@ def load_model(model_path, class_names):
     cfg.MODEL.WEIGHTS = model_path
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    return DefaultPredictor(cfg)
+    return DefaultPredictor(cfg)    
 
 # Load both models
 predictor_torn = load_model(MODEL_PATH_TORN, CLASS_NAMES_TORN)

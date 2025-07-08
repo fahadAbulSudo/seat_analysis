@@ -1,75 +1,84 @@
-import json
 import os
 import shutil
+import json
+from tqdm import tqdm
 
-# Paths
-torn_json_path = "/home/fahadabul/mask_rcnn_skyhub/final_images/merged_annotations_torn.json"
-wrinkle_json_path = "/home/fahadabul/mask_rcnn_skyhub/final_images/merged_annotations_wrinkle.json"
-torn_images_dir = "/home/fahadabul/mask_rcnn_skyhub/final_images/merged_images_torn"
-wrinkle_images_dir = "/home/fahadabul/mask_rcnn_skyhub/final_images/merged_images_wrinkle"
-output_json_path = "/home/fahadabul/mask_rcnn_skyhub/final_images/final_merged_annotations.json"
-output_images_dir = "/home/fahadabul/mask_rcnn_skyhub/final_images/final_merged_images"
+# Input folders
+base_folder = "/home/fahadabul/mask_rcnn_skyhub/dataset_remain"
+folders = ["1", "2", "3", "4", "5", "6", "7"]
 
-# Create output directory if not exists
-os.makedirs(output_images_dir, exist_ok=True)
+# Output folders
+output_images_folder = "/home/fahadabul/mask_rcnn_skyhub/combined_dataset/images"
+output_annotation_file = "/home/fahadabul/mask_rcnn_skyhub/combined_dataset/annotations.json"
 
-# Load JSON files
-with open(torn_json_path, "r") as f:
-    torn_data = json.load(f)
+os.makedirs(output_images_folder, exist_ok=True)
 
-with open(wrinkle_json_path, "r") as f:
-    wrinkle_data = json.load(f)
-
-# Ensure "wrinkle" category (id=2) is in the category list of torn_data
-categories = torn_data["categories"]
-category_ids = {cat["id"] for cat in categories}
-if 2 not in category_ids:
-    categories.append({"id": 2, "name": "wrinkle", "supercategory": "none"})
-
-# Initialize merged dataset
-merged_data = {
+# Prepare the COCO merged structure
+merged_coco = {
     "images": [],
     "annotations": [],
-    "categories": categories  # Keep updated categories
+    "categories": []
 }
 
-# Track new IDs
-image_id_map = {}
-new_image_id = 1
-new_annotation_id = 1
+# Track ID mappings
+image_id_counter = 1
+annotation_id_counter = 1
+image_old_to_new = {}
 
-def process_data(data, image_dir):
-    global new_image_id, new_annotation_id
-    for image in data["images"]:
-        old_image_id = image["id"]
-        new_filename = f"{new_image_id:06d}_" + os.path.basename(image["file_name"])
+# Assume categories are same across all datasets
+categories_set = False
 
-        # Copy image to merged folder
-        old_image_path = os.path.join(image_dir, image["file_name"])
-        new_image_path = os.path.join(output_images_dir, new_filename)
-        if os.path.exists(old_image_path):
-            shutil.copy(old_image_path, new_image_path)
+for folder in folders:
+    print(f"Processing folder {folder}...")
+    images_folder = os.path.join(base_folder, folder, "images")
+    annotation_file = os.path.join(base_folder, folder, "result.json")
 
-        # Update image metadata
-        image["id"] = new_image_id
-        image["file_name"] = new_filename
-        image_id_map[old_image_id] = new_image_id
-        merged_data["images"].append(image)
+    # Load the annotation file
+    with open(annotation_file, "r") as f:
+        coco = json.load(f)
 
-        new_image_id += 1
+    if not categories_set:
+        merged_coco["categories"] = coco["categories"]
+        categories_set = True
 
-    for annotation in data["annotations"]:
-        annotation["id"] = new_annotation_id
-        annotation["image_id"] = image_id_map[annotation["image_id"]]  # Update with new image ID
-        merged_data["annotations"].append(annotation)
-        new_annotation_id += 1
+    # Copy images and fix image ids
+    for image_info in tqdm(coco["images"], desc=f"Copying images from folder {folder}"):
+        old_image_id = image_info["id"]
+        old_file_name = image_info["file_name"].lstrip('/')
+        # file_name = img['file_name']
+        src_image_path = os.path.join(images_folder, old_file_name)
 
-# Process torn and wrinkle datasets
-process_data(torn_data, torn_images_dir)
-process_data(wrinkle_data, wrinkle_images_dir)
+        # Create a new unique file name if needed (avoid clashes)
+        new_file_name = f"{folder}_{old_file_name}"
+        dst_image_path = os.path.join(output_images_folder, new_file_name)
 
-# Save merged JSON
-with open(output_json_path, "w") as f:
-    json.dump(merged_data, f, indent=4)
+        shutil.copy(src_image_path, dst_image_path)
 
-print(f"Final merge complete! JSON saved to {output_json_path}")
+        # Update image info
+        new_image_info = {
+            "id": image_id_counter,
+            "width": image_info["width"],
+            "height": image_info["height"],
+            "file_name": new_file_name
+        }
+        merged_coco["images"].append(new_image_info)
+
+        # Map old image id to new image id
+        image_old_to_new[(folder, old_image_id)] = image_id_counter
+        image_id_counter += 1
+
+    # Update annotations
+    for anno in coco["annotations"]:
+        new_anno = anno.copy()
+        new_anno["id"] = annotation_id_counter
+        new_anno["image_id"] = image_old_to_new[(folder, anno["image_id"])]
+        merged_coco["annotations"].append(new_anno)
+        annotation_id_counter += 1
+
+# Save the merged annotation file
+with open(output_annotation_file, "w") as f:
+    json.dump(merged_coco, f)
+
+print("Merging completed!")
+print(f"All images copied to {output_images_folder}")
+print(f"Combined annotation JSON saved at {output_annotation_file}")
