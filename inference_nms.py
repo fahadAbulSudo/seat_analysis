@@ -6,7 +6,6 @@ from ultralytics import YOLO  # YOLOv8
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 from detectron2.model_zoo import get_config_file
-from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.layers.nms import batched_nms
@@ -20,8 +19,8 @@ def apply_nms(instances, iou_threshold=0.5):
     return instances[keep]
 
 # -------------------- Paths --------------------
-INPUT_DIR = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/zal/new"
-OUTPUT_DIR = "./output_predictions/segmentation_masks/zal_nms_new_2/new"
+INPUT_DIR = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/Seats_front_30.06-20250703T025503Z-1-001/Seats_front_30.06"
+OUTPUT_DIR = "./output_predictions/segmentation_masks/Seats_front_30.06_nms"
 YOLO_MODEL_PATH = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/best.pt"
 MODEL_PATH_TORN = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn/dataset/output/model_final.pth"
 MODEL_PATH_WRINKLE = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/model_23rd.pth"
@@ -38,7 +37,7 @@ def load_model(model_path, class_names):
     cfg.merge_from_file(get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(class_names)
     cfg.MODEL.WEIGHTS = model_path
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.3  # Raised threshold to reduce noise
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.3
     cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     return DefaultPredictor(cfg)
 
@@ -62,47 +61,6 @@ def offset_instances(instances, offset_x, offset_y, full_image_shape):
     instances.pred_masks = torch.from_numpy(padded_masks)
     instances._image_size = full_image_shape[:2]
     return instances
-
-def quantify_defects_from_maskrcnn(instances, image_shape):
-    height, width = image_shape
-    results = []
-    instances = instances.to("cpu")
-    masks = instances.pred_masks.numpy()
-    boxes = instances.pred_boxes.tensor.numpy()
-    classes = instances.pred_classes.numpy()
-    scores = instances.scores.numpy()
-    for i, mask in enumerate(masks):
-        area_px = np.sum(mask)
-        x1, y1, x2, y2 = boxes[i]
-        bbox_width = x2 - x1
-        bbox_height = y2 - y1
-        bbox_area = bbox_width * bbox_height
-        cx = ((x1 + x2) / 2) / width
-        cy = ((y1 + y2) / 2) / height
-        w_norm = bbox_width / width
-        h_norm = bbox_height / height
-        aspect_ratio = w_norm / h_norm if h_norm > 0 else 0
-        mask_uint8 = (mask * 255).astype(np.uint8)
-        contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        perimeter = sum([cv2.arcLength(cnt, True) for cnt in contours])
-        rect = cv2.minAreaRect(contours[0]) if contours else ((0, 0), (0, 0), 0)
-        (_, _), (w_rect, h_rect), angle = rect
-        length = max(w_rect, h_rect)
-        defect_width = min(w_rect, h_rect)
-        results.append({
-            "class_id": int(classes[i]),
-            "confidence": float(scores[i]),
-            "mask_area_px": int(area_px),
-            "bbox_area_px": int(bbox_area),
-            "bbox_center_norm": (round(cx, 4), round(cy, 4)),
-            "bbox_size_norm": (round(w_norm, 4), round(h_norm, 4)),
-            "aspect_ratio": round(aspect_ratio, 4),
-            "perimeter_px": round(perimeter, 2),
-            "length_px": round(length, 2),
-            "width_px": round(defect_width, 2),
-            "orientation_deg": round(angle, 2)
-        })
-    return results
 
 # -------------------- Image Processor --------------------
 def process_images(input_dir, output_dir):
@@ -136,12 +94,6 @@ def process_images(input_dir, output_dir):
                     masked_roi = cv2.bitwise_and(cropped_image, cropped_image, mask=cropped_mask)
 
                     wrinkle_outputs = predictor_wrinkle(masked_roi)
-                    instances = wrinkle_outputs["instances"]
-                    img_shape = image.shape[:2]
-                    defect_stats = quantify_defects_from_maskrcnn(instances, img_shape)
-                    for i, defect in enumerate(defect_stats):
-                        print(f"Defect {i+1}:", defect)
-
                     offset_wrinkle = offset_instances(wrinkle_outputs["instances"], x, y, image.shape[:2])
                     offset_wrinkle = relabel_instances(offset_wrinkle, 1)
                     if len(offset_wrinkle) > 0:
@@ -149,14 +101,48 @@ def process_images(input_dir, output_dir):
 
                 if all_instances:
                     combined_instances = Instances.cat(all_instances)
-                    combined_instances = apply_nms(combined_instances, iou_threshold=0.3)  # NMS Applied
-                    v = Visualizer(image[:, :, ::-1], metadata=metadata, scale=1.0)
-                    output_image = v.draw_instance_predictions(combined_instances).get_image()[:, :, ::-1]
+                    combined_instances = apply_nms(combined_instances, iou_threshold=0.3)
+
+                    output_image = image.copy()
+                    for i in range(len(combined_instances)):
+                        mask = combined_instances.pred_masks[i].numpy().astype(np.uint8)
+                        score = combined_instances.scores[i].item() * 100
+
+                        # Pick BGR color and alpha based on confidence score
+                        if 30 <= score < 50:
+                            color = (0, 255, 255)  # light yellow
+                            alpha = 0.3
+                        elif 50 <= score < 70:
+                            color = (0, 165, 255)  # orange
+                            alpha = 0.4
+                        elif score >= 70:
+                            color = (0, 0, 255)    # red
+                            alpha = 0.5
+                        else:
+                            continue
+
+                        # Apply translucent mask overlay (manual alpha blending)
+                        for c in range(3):  # For B, G, R channels
+                            output_image[:, :, c] = np.where(
+                                mask == 1,
+                                (1 - alpha) * output_image[:, :, c] + alpha * color[c],
+                                output_image[:, :, c]
+                            ).astype(np.uint8)
+
+                        # Draw bounding box
+                        x1, y1, x2, y2 = combined_instances.pred_boxes.tensor[i].int().tolist()
+                        cv2.rectangle(output_image, (x1, y1), (x2, y2), color, 2)
+
+                        # Draw label text
+                        label = f"{metadata.thing_classes[combined_instances.pred_classes[i]]}:{int(score)}%"
+                        cv2.putText(output_image, label, (x1, y1 - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
                 else:
                     output_image = image
 
                 cv2.imwrite(output_path, output_image)
                 print(f"Processed {image_path} -> Saved to {output_path}")
+
             except AttributeError as e:
                 print(f"Error accessing YOLO results masks: {e}")
 
