@@ -1,6 +1,7 @@
 # -------------------- Imports --------------------
 import os
 import cv2
+import json
 import torch
 import numpy as np
 from ultralytics import YOLO  # YOLOv8 for seat detection
@@ -27,20 +28,15 @@ def apply_nms(instances, iou_threshold=0.5):
     keep = batched_nms(boxes, scores, classes, iou_threshold)
     return instances[keep]
 
-# -------------------- Paths --------------------
-# Input directory with seat images
-INPUT_DIR = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/MSN12864_Left-20250812T102814Z-1-001/MSN12864_Left"
+# -------------------- Load Config --------------------
+with open("config.json", "r") as f:
+    config = json.load(f)
 
-# Output directory for saving prediction visualizations
-OUTPUT_DIR = "./output_predictions/segmentation_masks/MSN12864_Left_Old"
-
-# Path to YOLOv8 seat+backseat model
-YOLO_MODEL_PATH = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/yolo_seat_back_best_model/best_only_seat_n_backseat.pt"
-
-# Paths to Detectron2 models for torn and wrinkle detection
-MODEL_PATH_TORN = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn/dataset/output/model_final.pth"
-# MODEL_PATH_WRINKLE = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/aug_11_wrinkle/model_final_1 (1).pth"
-MODEL_PATH_WRINKLE = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/model_23rd.pth"
+INPUT_DIR = config["INPUT_DIR"]
+OUTPUT_DIR = config["OUTPUT_DIR"]
+YOLO_MODEL_PATH = config["YOLO_MODEL_PATH"]
+MODEL_PATH_TORN = config["MODEL_PATH_TORN"]
+MODEL_PATH_WRINKLE = config["MODEL_PATH_WRINKLE"]
 # Register custom dataset metadata if not already present
 if "torn_wrinkle_dataset" not in MetadataCatalog.list():
     MetadataCatalog.get("torn_wrinkle_dataset").set(thing_classes=["torn", "wrinkle"])
@@ -112,17 +108,11 @@ def process_images(input_dir, output_dir):
     - For each seat region, run wrinkle segmentation using Detectron2
     - Overlay masks and bounding boxes on image
     - Save output visualizations
+    - Save wrinkle instance info for the first image only and break
     """
+    wrinkle_info_saved = False  # track whether first image's wrinkles saved
+
     for root, _, files in os.walk(input_dir):
-        # image_files = sorted(
-        #     [f for f in files if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-        # )
-
-        # # Skip if not exactly 8 images
-        # if len(image_files) != 8:
-        #     continue
-
-        count = 0
         for file in files:
             if not file.lower().endswith((".jpg", ".jpeg", ".png")):
                 continue
@@ -137,14 +127,6 @@ def process_images(input_dir, output_dir):
             if image is None:
                 print(f"Skipping {image_path}: Unable to read image.")
                 continue
-
-            # Decide rotation direction
-            # if count < 4:
-            #     image = rotate_image(image, "ccw")   # Clockwise
-            # else:
-            #     image = rotate_image(image, "cw")  # Counterclockwise
-
-            # count += 1
 
             yolo_results = yolo_model(image)[0]  # Seat detection
             try:
@@ -164,8 +146,11 @@ def process_images(input_dir, output_dir):
                         print(f"Skipping mask {idx} ({cls_name}) in {file}")
                         continue
 
-                    # Post-process YOLO mask
-                    binary_mask = cv2.resize((mask > 0.3).astype(np.uint8), (width, height), interpolation=cv2.INTER_NEAREST)
+                    binary_mask = cv2.resize(
+                        (mask > 0.3).astype(np.uint8),
+                        (width, height),
+                        interpolation=cv2.INTER_NEAREST,
+                    )
                     x, y, w, h = cv2.boundingRect(binary_mask)
                     cropped_image = image[y:y+h, x:x+w]
                     cropped_mask = binary_mask[y:y+h, x:x+w]
@@ -184,37 +169,111 @@ def process_images(input_dir, output_dir):
                     combined_instances = apply_nms(combined_instances, iou_threshold=0.3)
 
                     output_image = image.copy()
+                    wrinkle_details = []  # collect wrinkle info
+
                     for i in range(len(combined_instances)):
                         mask = combined_instances.pred_masks[i].numpy().astype(np.uint8)
                         score = combined_instances.scores[i].item() * 100
 
-                        # Color and transparency by confidence
+                        if score < 30:
+                            continue
+
+                        # Assign color by confidence
                         if 30 <= score < 50:
-                            color = (0, 255, 255)  # Yellow
+                            color = (0, 255, 255)
                             alpha = 0.2
                         elif 50 <= score < 70:
-                            color = (0, 165, 255)  # Orange
-                            alpha = 0.2
-                        elif score >= 70:
-                            color = (0, 0, 255)    # Red
+                            color = (0, 165, 255)
                             alpha = 0.2
                         else:
-                            continue
+                            color = (0, 0, 255)
+                            alpha = 0.2
 
                         # Overlay mask with transparency
                         for c in range(3):
                             output_image[:, :, c] = np.where(
                                 mask == 1,
                                 (1 - alpha) * output_image[:, :, c] + alpha * color[c],
-                                output_image[:, :, c]
+                                output_image[:, :, c],
                             ).astype(np.uint8)
 
                         # Draw bounding box and label
                         x1, y1, x2, y2 = combined_instances.pred_boxes.tensor[i].int().tolist()
-                        cv2.rectangle(output_image, (x1, y1), (x2, y2), color, 2)
                         label = f"{metadata.thing_classes[combined_instances.pred_classes[i]]}:{int(score)}%"
-                        cv2.putText(output_image, label, (x1, y1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                        cv2.rectangle(output_image, (x1, y1), (x2, y2), color, 2)
+                        cv2.putText(
+                            output_image,
+                            label,
+                            (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            color,
+                            1,
+                        )
+
+                        # --- Extract (x, y) coordinates of the mask ---
+                        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        mask_coordinates = []
+                        for contour in contours:
+                            contour = contour.squeeze()
+                            if contour.ndim == 1:
+                                continue
+                            mask_coordinates.extend([[int(x), int(y)] for x, y in contour])
+
+                        # Collect wrinkle info
+                        wrinkle_details.append({
+                            "bbox": [x1, y1, x2, y2],
+                            "score": round(score, 2),
+                            "label": label,
+                            "mask_coordinates": mask_coordinates
+
+                        })
+
+                    # --- Save wrinkle instance info for the first image only ---
+                    if not wrinkle_info_saved and wrinkle_details:
+                        wrinkle_info_path = os.path.join(save_dir, "wrinkle_instances.txt")
+                        with open(wrinkle_info_path, "w") as f:
+                            f.write(f"Wrinkle Instances for {file}\n")
+                            f.write("=" * 50 + "\n")
+                            for d in wrinkle_details:
+                                f.write(f"{d}\n")
+                        print(f"✅ Saved wrinkle info for first image at: {wrinkle_info_path}")
+
+
+
+                        # --- ADDED: Draw wrinkle boxes on image before returning ---
+                        wrinkle_vis_image = output_image.copy()
+                        for d in wrinkle_details:
+                            x1, y1, x2, y2 = d["bbox"]
+                            label = d["label"]
+                            score = d["score"]
+                            color = (0, 0, 255) if "wrinkle" in label.lower() else (255, 0, 0)
+
+                            # Draw bounding box
+                            cv2.rectangle(wrinkle_vis_image, (x1, y1), (x2, y2), color, 2)
+                            cv2.putText(
+                                wrinkle_vis_image,
+                                label,
+                                (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                color,
+                                1,
+                            )
+
+                            # Optionally draw mask contour points for better visualization
+                            for (px, py) in d["mask_coordinates"]:
+                                cv2.circle(wrinkle_vis_image, (px, py), 1, (0, 255, 255), -1)
+
+                        wrinkle_vis_path = os.path.join(save_dir, f"wrinkle_visualized_{file}")
+                        cv2.imwrite(wrinkle_vis_path, wrinkle_vis_image)
+                        print(f"🖼️ Saved wrinkle visualization with boxes at: {wrinkle_vis_path}")
+
+
+                        wrinkle_info_saved = True
+                        # --- Break after first image ---
+                        return  # exits entire process after saving first instance
+
                 else:
                     output_image = image  # No predictions
 
@@ -223,6 +282,7 @@ def process_images(input_dir, output_dir):
 
             except AttributeError as e:
                 print(f"Error accessing YOLO results masks: {e}")
+
 
 # -------------------- Run --------------------
 process_images(INPUT_DIR, OUTPUT_DIR)

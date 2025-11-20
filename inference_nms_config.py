@@ -1,6 +1,7 @@
 # -------------------- Imports --------------------
 import os
 import cv2
+import json
 import torch
 import numpy as np
 from ultralytics import YOLO  # YOLOv8 for seat detection
@@ -27,20 +28,15 @@ def apply_nms(instances, iou_threshold=0.5):
     keep = batched_nms(boxes, scores, classes, iou_threshold)
     return instances[keep]
 
-# -------------------- Paths --------------------
-# Input directory with seat images
-INPUT_DIR = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/MSN12864_Left-20250812T102814Z-1-001/MSN12864_Left"
+# -------------------- Load Config --------------------
+with open("config.json", "r") as f:
+    config = json.load(f)
 
-# Output directory for saving prediction visualizations
-OUTPUT_DIR = "./output_predictions/segmentation_masks/MSN12864_Left_Old"
-
-# Path to YOLOv8 seat+backseat model
-YOLO_MODEL_PATH = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/yolo_seat_back_best_model/best_only_seat_n_backseat.pt"
-
-# Paths to Detectron2 models for torn and wrinkle detection
-MODEL_PATH_TORN = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn/dataset/output/model_final.pth"
-# MODEL_PATH_WRINKLE = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/aug_11_wrinkle/model_final_1 (1).pth"
-MODEL_PATH_WRINKLE = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/model_23rd.pth"
+INPUT_DIR = config["INPUT_DIR"]
+OUTPUT_DIR = config["OUTPUT_DIR"]
+YOLO_MODEL_PATH = config["YOLO_MODEL_PATH"]
+MODEL_PATH_TORN = config["MODEL_PATH_TORN"]
+MODEL_PATH_WRINKLE = config["MODEL_PATH_WRINKLE"]
 # Register custom dataset metadata if not already present
 if "torn_wrinkle_dataset" not in MetadataCatalog.list():
     MetadataCatalog.get("torn_wrinkle_dataset").set(thing_classes=["torn", "wrinkle"])
@@ -184,6 +180,7 @@ def process_images(input_dir, output_dir):
                     combined_instances = apply_nms(combined_instances, iou_threshold=0.3)
 
                     output_image = image.copy()
+                    print(combined_instances)
                     for i in range(len(combined_instances)):
                         mask = combined_instances.pred_masks[i].numpy().astype(np.uint8)
                         score = combined_instances.scores[i].item() * 100

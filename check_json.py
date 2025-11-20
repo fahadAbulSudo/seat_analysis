@@ -4,10 +4,10 @@ import cv2
 import numpy as np
 
 # Paths
-output_images_folder = "/home/fahadabul/mask_rcnn_skyhub/dataset_remain/3/images"
-output_annotation_file = "/home/fahadabul/mask_rcnn_skyhub/dataset_remain/3/result.json"
-output_visualization_folder = "/home/fahadabul/mask_rcnn_skyhub/dataset_remain/3/visualization"
-out_of_bounds_report = "/home/fahadabul/mask_rcnn_skyhub/dataset_remain/3/out_of_bounds_annotations.txt"
+output_images_folder = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/merged/images"
+output_annotation_file = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/merged/merged_annotations.json"
+output_visualization_folder = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/merged/close"
+out_of_bounds_report = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/merged/close/out_of_bounds_annotations.txt"
 
 # Create visualization output folder
 os.makedirs(output_visualization_folder, exist_ok=True)

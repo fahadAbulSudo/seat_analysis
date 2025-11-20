@@ -3,9 +3,9 @@ import json
 import shutil
 
 # Paths
-image_folder = '/home/fahadabul/mask_rcnn_skyhub/dataset_separated/images_A'
-coco_json_path = '/home/fahadabul/mask_rcnn_skyhub/dataset_separated/new_annotations_cleaned_result.json'
-output_coco_json_path = '/home/fahadabul/mask_rcnn_skyhub/dataset_separated/seat_wrinkle_only_annotations_result.json'
+image_folder = '/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/MSN_12741_right-20250805T030028Z-1-001/test/coco/seat1_paste/extract/images'
+coco_json_path = '/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/MSN_12741_right-20250805T030028Z-1-001/test/coco/seat1_paste/extract/new_annotations.json'
+output_coco_json_path = '/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/MSN_12741_right-20250805T030028Z-1-001/test/coco/seat1_paste/extract/seat_wrinkle_only_annotations_result.json'
 
 # Load COCO JSON
 with open(coco_json_path, 'r') as f:
@@ -18,7 +18,10 @@ new_annotations = []
 for ann in coco_data['annotations']:
     if ann['category_id'] == 2:  # Wrinkle
         wrinkle_image_ids.add(ann['image_id'])
-        new_annotations.append(ann)  # Keep wrinkle annotation
+
+        # Change wrinkle id from 2 to 1 in the annotation
+        ann['category_id'] = 1
+        new_annotations.append(ann)
     else:
         # Skipping seat or any other annotations
         continue
@@ -41,7 +44,12 @@ for img in coco_data['images']:
 new_coco_data = {
     "images": new_images,
     "annotations": new_annotations,
-    "categories": [cat for cat in coco_data['categories'] if cat['id'] == 2]  # Keep only wrinkle category
+    "categories": [
+        {
+            "id": 1,
+            "name": "wrinkle"
+        }
+    ]  # Wrinkle is now id 1
 }
 
 # Step 4: Save the updated COCO JSON

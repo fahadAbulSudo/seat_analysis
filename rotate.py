@@ -1,31 +1,58 @@
 import os
 import cv2
 
-# Directories to process
-base_dirs = [
-    "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/zal/cam_7",
-]
+# Base directory containing seat folders
+BASE_DIR = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/MSN12864_Left-20250812T102814Z-1-001/MSN12864_Left"
 
 # Supported image extensions
-valid_exts = (".jpg", ".jpeg", ".png")
+VALID_EXTS = (".jpg", ".jpeg", ".png")
 
-def rotate_image(image):
-    return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+def rotate_image(image, direction):
+    """Rotate image based on direction ('cw' or 'ccw')."""
+    if direction == "cw":
+        return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    elif direction == "ccw":
+        return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return image
 
-def rotate_images_in_dir(directory):
-    for file in os.listdir(directory):
-        if file.lower().endswith(valid_exts):
-            path = os.path.join(directory, file)
-            image = cv2.imread(path)
-            if image is None:
-                print(f"Skipping unreadable image: {path}")
-                continue
-            rotated = rotate_image(image)
-            cv2.imwrite(path, rotated)
-            print(f"Rotated: {path}")
+def process_seat_folder(seat_path):
+    raw_images_dir = os.path.join(seat_path, "raw_images")
+    if not os.path.exists(raw_images_dir):
+        return
 
-# Apply rotation
-for dir_path in base_dirs:
-    rotate_images_in_dir(dir_path)
+    files = sorted([f for f in os.listdir(raw_images_dir) if f.lower().endswith(VALID_EXTS)])
+    if len(files) < 8:
+        print(f"⚠ Skipping {raw_images_dir} (not enough images)")
+        return
 
-print("Rotation complete.")
+    # First 4 images: rotate clockwise
+    # for f in files[:4]:
+    #     img_path = os.path.join(raw_images_dir, f)
+    #     img = cv2.imread(img_path)
+    #     if img is None:
+    #         print(f"Skipping unreadable image: {img_path}")
+    #         continue
+    #     rotated = rotate_image(img, "cw")
+    #     cv2.imwrite(img_path, rotated)
+    #     print(f"✅ Rotated CW: {img_path}")
+
+    # Last 4 images: rotate counterclockwise
+    for f in files[4:8]:
+        img_path = os.path.join(raw_images_dir, f)
+        img = cv2.imread(img_path)
+        if img is None:
+            print(f"Skipping unreadable image: {img_path}")
+            continue
+        rotated = rotate_image(img, "ccw")
+        cv2.imwrite(img_path, rotated)
+        print(f"✅ Rotated CCW: {img_path}")
+
+def main():
+    for seat_folder in sorted(os.listdir(BASE_DIR)):
+        seat_path = os.path.join(BASE_DIR, seat_folder)
+        if os.path.isdir(seat_path) and seat_folder.startswith("seat_"):
+            process_seat_folder(seat_path)
+
+if __name__ == "__main__":
+    main()
+    print("🎯 Rotation complete for all seat folders.")

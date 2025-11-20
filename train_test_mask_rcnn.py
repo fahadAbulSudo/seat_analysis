@@ -4,7 +4,7 @@ import random
 import shutil
 
 # Paths
-dataset_root = "/home/fahadabul/mask_rcnn_skyhub/dataset_separated"
+dataset_root = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/merged/new"
 images_folder = os.path.join(dataset_root, "images")
 annotation_file = os.path.join(dataset_root, "merged_annotations.json")
 

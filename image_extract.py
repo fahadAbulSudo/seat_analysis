@@ -2,7 +2,7 @@ import os
 import zipfile
 
 # Paths
-source_folder = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/Inspector Pictures from Google Notes"
+source_folder = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/Inspector Pictures from Google Notes/week 30 upload"
 output_folder = os.path.join(source_folder, "images")
 
 # Create output folder if it doesn't exist

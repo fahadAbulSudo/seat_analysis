@@ -7,14 +7,22 @@ import matplotlib.patches as patches
 from matplotlib.patches import Polygon
 
 # === Paths ===
-annotation_path = "/home/fahadabul/mask_rcnn_skyhub/new_annotation/result.json"
-output_cleaned_path = "/home/fahadabul/mask_rcnn_skyhub/new_annotation/new_annotations_cleaned.json"
-IMAGES_DIR = "/home/fahadabul/mask_rcnn_skyhub/new_annotation/images"
-VIS_DIR = "/home/fahadabul/mask_rcnn_skyhub/new_annotation/visualized_bboxes_2025"
-os.makedirs(VIS_DIR, exist_ok=True)
+annotations_path = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/close/result.json"
+images_dir = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/close/images"
+vis_dir = "/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/aug_8/close/extract"
+os.makedirs(vis_dir, exist_ok=True)
+
+# === Target images to fix ===
+target_images = {
+    "3bae7f67-20250630_130738.jpg",
+    "37b396b3-20250630_131056.jpg",
+    "dca30044-20250630_130426.jpg",
+    "e6017fb1-20250630_131937.jpg",
+    "e9011798-20250630_131013.jpg"
+}
 
 # === Load JSON ===
-with open(annotation_path) as f:
+with open(annotations_path) as f:
     coco = json.load(f)
 
 image_id_map = {img['id']: img for img in coco['images']}
@@ -28,8 +36,14 @@ updated_annotations = []
 # === Main Fix and Visualize Loop ===
 for image_id, image_info in image_id_map.items():
     filename = image_info["file_name"]
+
+    # Only process target images
+    if filename not in target_images:
+        updated_annotations.extend(annotations_by_image[image_id])
+        continue
+
     json_width, json_height = image_info["width"], image_info["height"]
-    image_path = os.path.join(IMAGES_DIR, filename)
+    image_path = os.path.join(images_dir, filename)
 
     if not os.path.exists(image_path):
         print(f"❌ Image not found: {image_path}")
@@ -52,6 +66,11 @@ for image_id, image_info in image_id_map.items():
         ax.imshow(img)
 
         for ann in annotations_by_image[image_id]:
+            # Only fix wrinkle annotations
+            if category_id_map.get(ann["category_id"], "").lower() != "wrinkle":
+                updated_annotations.append(ann)
+                continue
+
             # --- Fix bbox ---
             x, y, w, h = ann["bbox"]
             norm_x = x / json_width
@@ -86,20 +105,19 @@ for image_id, image_info in image_id_map.items():
             rect = patches.Rectangle((draw_x, draw_y), draw_w, draw_h,
                                      linewidth=2, edgecolor='blue', facecolor='none')
             ax.add_patch(rect)
-            cat_name = category_id_map.get(ann["category_id"], str(ann["category_id"]))
-            ax.text(draw_x, draw_y - 5, cat_name, color='blue', fontsize=10)
+            ax.text(draw_x, draw_y - 5, "wrinkle", color='blue', fontsize=10)
 
             updated_annotations.append(ann)
 
-        vis_path = os.path.join(VIS_DIR, f"bbox_{filename}")
+        vis_path = os.path.join(vis_dir, f"bbox_{filename}")
         fig.savefig(vis_path)
         plt.close(fig)
         print(f"✅ Saved: {vis_path}")
     else:
         updated_annotations.extend(annotations_by_image[image_id])
 
-# === Save Updated JSON ===
+# === Save Updated JSON in place ===
 coco["annotations"] = updated_annotations
-with open(output_cleaned_path, "w") as f:
+with open(annotations_path, "w") as f:  # Overwrite same file
     json.dump(coco, f)
-print(f"✅ Fixed JSON saved to: {output_cleaned_path}")
+print(f"✅ Updated JSON saved to: {annotations_path}")

@@ -1,3 +1,4 @@
+
 import os
 import cv2
 import json
@@ -7,14 +8,11 @@ from pycocotools import mask as maskUtils
 from ultralytics import YOLO
 
 # Paths
-images_dir = "/home/fahadabul/mask_rcnn_skyhub/desired_dataset/images"
-annotations_path = "/home/fahadabul/mask_rcnn_skyhub/desired_dataset/coco_annotations.json"
-output_dir = "/home/fahadabul/mask_rcnn_skyhub/dataset_separated/test_old"
-os.makedirs(os.path.join(output_dir, "images"), exist_ok=True)
-# Add at the top
-debug_dir = os.path.join(output_dir, "output", "debug")
-os.makedirs(debug_dir, exist_ok=True)
-output_ann_path = os.path.join(output_dir, "new_annotations.json")
+images_dir = "/home/fahadabul/mask_rcnn_skyhub/new_annotation/images"
+annotations_path = "/home/fahadabul/mask_rcnn_skyhub/new_annotation/new_annotations_cleaned.json"
+output_dir = "/home/fahadabul/mask_rcnn_skyhub/dataset_separated/test_mask"
+os.makedirs(os.path.join(output_dir, "images_A"), exist_ok=True)
+output_ann_path = os.path.join(output_dir, "new_annotations_cleaned_result.json")
 
 # Load original annotations
 with open(annotations_path, "r") as f:
@@ -24,10 +22,7 @@ with open(annotations_path, "r") as f:
 yolo_model = YOLO("/home/fahadabul/mask_rcnn_skyhub/latest_image_mask_rcnn_torn_wrinkle/output/model_3rd/best.pt")
 
 # Get wrinkle category ID
-wrinkle_category_id = None
-for cat in coco_data["categories"]:
-    if cat["name"].lower() == "wrinkle":
-        wrinkle_category_id = cat["id"]
+wrinkle_category_id = next((cat["id"] for cat in coco_data["categories"] if cat["name"].lower() == "wrinkle"), None)
 assert wrinkle_category_id is not None, "Wrinkle category not found!"
 
 # Group annotations by image
@@ -69,9 +64,6 @@ for img in coco_data["images"]:
 
         # Bounding box of seat mask
         x, y, w, h = cv2.boundingRect(resized_mask)
-        # add offset
-        # if w == 0 or h == 0:
-        #     continue  # Skip empty/invalid masks
 
         # Crop image and mask
         cropped_image = image[y:y+h, x:x+w]
@@ -84,8 +76,7 @@ for img in coco_data["images"]:
 
         # Save cropped masked seat image
         new_file_name = f"{os.path.splitext(img['file_name'])[0]}_seat{seat_idx}.jpg"
-        save_path = os.path.join(output_dir, "images", new_file_name)
-        debug_image = masked_image.copy()
+        save_path = os.path.join(output_dir, "images_A", new_file_name)
         cv2.imwrite(save_path, masked_image)
 
         # Add new image entry
@@ -104,18 +95,15 @@ for img in coco_data["images"]:
         new_annotations.append({
             "id": new_annotation_id,
             "image_id": new_image_id,
-            "category_id": 1,  # seat
+            "category_id": 1,
             "segmentation": rle,
-            "bbox": [0, 0, w, h],  # since it’s cropped, bbox always starts at (0,0)
+            "bbox": [0, 0, w, h],
             "area": area,
             "iscrowd": 0
         })
         new_annotation_id += 1
 
-        # Cropped seat bounding box in original image coordinates
-        seat_x1, seat_y1, seat_x2, seat_y2 = x, y, x + w, y + h
-
-        # Add wrinkle annotations that overlap the seat bounding box
+        # Check wrinkle overlap using mask logic
         for wr_ann in wrinkle_anns:
             if isinstance(wr_ann["segmentation"], list):
                 wr_rles = maskUtils.frPyObjects(wr_ann["segmentation"], height, width)
@@ -123,77 +111,31 @@ for img in coco_data["images"]:
             else:
                 wr_rle = wr_ann["segmentation"]
 
-            wrinkle_mask = maskUtils.decode(wr_rle)
+            wrinkle_mask = maskUtils.decode(wr_rle).astype(np.uint8)
+            overlap = np.logical_and(resized_mask, wrinkle_mask).astype(np.uint8)
 
-            # Get wrinkle bbox
-            wr_x, wr_y, wr_w, wr_h = cv2.boundingRect(wrinkle_mask)
-            wr_x1, wr_y1, wr_x2, wr_y2 = wr_x, wr_y, wr_x + wr_w, wr_y + wr_h
-
-            # Check for intersection with seat bbox
-            inter_x1 = max(seat_x1, wr_x1)
-            inter_y1 = max(seat_y1, wr_y1)
-            inter_x2 = min(seat_x2, wr_x2)
-            inter_y2 = min(seat_y2, wr_y2)
-
-            inter_w = max(0, inter_x2 - inter_x1)
-            inter_h = max(0, inter_y2 - inter_y1)
-            intersection_area = inter_w * inter_h
-
-        #     if intersection_area > 0:
-        #         # Crop the wrinkle mask to seat bounding box
-        #         cropped_wrinkle_mask = wrinkle_mask[y:y+h, x:x+w]
-
-        #         # Skip empty masks
-        #         if not np.any(cropped_wrinkle_mask):
-        #             continue
-
-        #         # Encode new cropped wrinkle mask
-        #         wr_rle_cropped = maskUtils.encode(np.asfortranarray(cropped_wrinkle_mask))
-        #         wr_rle_cropped["counts"] = wr_rle_cropped["counts"].decode("utf-8")
-
-        #         # Compute new bbox within cropped image
-        #         x0, y0, w0, h0 = cv2.boundingRect(cropped_wrinkle_mask)
-        #         wr_area = int(np.sum(cropped_wrinkle_mask))
-
-        #         new_annotations.append({
-        #             "id": new_annotation_id,
-        #             "image_id": new_image_id,
-        #             "category_id": 2,  # wrinkle
-        #             "segmentation": wr_rle_cropped,
-        #             "bbox": [x0, y0, w0, h0],
-        #             "area": wr_area,
-        #             "iscrowd": 0
-        #         })
-        #         new_annotation_id += 1
-
-        # new_image_id += 1
-            if inter_w * inter_h == 0:
+            if not np.any(overlap):
                 continue
 
-            cropped_wrinkle_mask = wrinkle_mask[y:y+h, x:x+w]
-            if not np.any(cropped_wrinkle_mask):
+            # Crop wrinkle mask to seat region
+            cropped_wrinkle = overlap[y:y+h, x:x+w]
+            if not np.any(cropped_wrinkle):
                 continue
 
-            contours, _ = cv2.findContours(cropped_wrinkle_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Convert to polygon
+            contours, _ = cv2.findContours(cropped_wrinkle, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             polygons = []
             for contour in contours:
                 if contour.shape[0] >= 3:
-                    polygon = contour.flatten().astype(float).tolist()
-                    polygons.append(polygon)
+                    polygons.append(contour.flatten().astype(float).tolist())
 
             if not polygons:
                 continue
 
-            wr_area = int(np.sum(cropped_wrinkle_mask))
-            x0, y0, w0, h0 = cv2.boundingRect(cropped_wrinkle_mask)
+            wr_area = int(np.sum(cropped_wrinkle))
+            x0, y0, w0, h0 = cv2.boundingRect(cropped_wrinkle)
 
-            # Draw wrinkle contours on debug image
-            for contour in contours:
-                cv2.drawContours(debug_image, [contour], -1, (0, 255, 0), 2)
-
-            # Save debug visualization
-            debug_path = os.path.join(debug_dir, f"{os.path.splitext(new_file_name)[0]}_debug.jpg")
-            cv2.imwrite(debug_path, debug_image)
+            print(f"Wrinkle in {new_file_name} => segmentation: {polygons}")
 
             new_annotations.append({
                 "id": new_annotation_id,
